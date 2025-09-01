@@ -1,0 +1,42 @@
+import bpy
+
+def gather_descendants(obj):
+    """Return a list with obj and all its recursive children."""
+    collected = [obj]
+    for c in obj.children:
+        collected.extend(gather_descendants(c))
+    return collected
+
+created = 0
+
+for obj in list(bpy.data.objects):
+    if obj.children:  # only process objects that actually have children
+        col_name = f"{obj.name}_asset"
+        
+        # Create a new collection if it doesn't already exist
+        col = bpy.data.collections.get(col_name)
+        if not col:
+            col = bpy.data.collections.new(col_name)
+            bpy.context.scene.collection.children.link(col)
+        
+        # Gather parent and descendants
+        members = gather_descendants(obj)
+        
+        # Link objects into the collection
+        for o in members:
+            if o.name not in col.objects:
+                try:
+                    col.objects.link(o)
+                except RuntimeError:
+                    # object already linked somewhere else, skip
+                    pass
+        
+        # Mark the collection as asset
+        try:
+            col.asset_mark()
+        except RuntimeError:
+            pass
+        
+        created += 1
+
+print(f"Created or updated {created} collection assets.")

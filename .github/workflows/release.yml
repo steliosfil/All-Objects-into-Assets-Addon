@@ -2,7 +2,10 @@ name: Build & Attach Addon ZIP
 
 on:
   release:
-    types: [published]   # runs when you click "Publish release"
+    types: [published]
+
+permissions:
+  contents: write   # <-- allow attaching assets to releases
 
 jobs:
   build:
@@ -16,7 +19,6 @@ jobs:
       - name: Prepare dist folder
         run: |
           mkdir -p dist
-          # Zip ONLY the addon package folder so the ZIP root contains all_objects_into_assets/
           zip -r dist/AllObjectsIntoAssets.zip all_objects_into_assets \
             -x "**/__pycache__/*" "**/*.pyc" "**/.DS_Store"
 

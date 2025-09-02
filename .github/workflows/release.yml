@@ -2,30 +2,55 @@ name: Build & Attach Addon ZIP
 
 on:
   release:
-    types: [published, edited]   # run when you publish OR edit the release
-  workflow_dispatch:             # allow manual run from Actions tab
+    types: [published, edited]     # fires when you publish OR edit a release
+  workflow_dispatch:               # manual run from Actions
+    inputs:
+      tag:
+        description: "Tag to (create/update) release for (e.g. v1.0.0)"
+        required: true
+        type: string
 
 permissions:
-  contents: write                # REQUIRED to attach assets to release
+  contents: write                  # needed to upload assets / create releases
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository at the release tag
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # For release events, GITHUB_REF points to the tag already.
+          # For manual runs, we'll still check out the default branch (main)
+          # unless you modify this to checkout "refs/tags/${{ inputs.tag }}".
           fetch-depth: 0
 
-      - name: Prepare dist folder
+      - name: Prepare dist ZIP
         run: |
           mkdir -p dist
+          # Zip ONLY the addon package folder so the ZIP root is all_objects_into_assets/
           zip -r dist/AllObjectsIntoAssets.zip all_objects_into_assets \
             -x "**/__pycache__/*" "**/*.pyc" "**/.DS_Store"
 
-      - name: Attach ZIP to the current release
+      # Path A: release event -> attach to *this* release
+      - name: Attach to current release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
+          files: dist/AllObjectsIntoAssets.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Path B: manual run -> create or update release for input tag
+      - name: Create/Update release for input tag
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           files: dist/AllObjectsIntoAssets.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

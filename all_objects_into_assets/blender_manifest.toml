@@ -9,7 +9,7 @@ type = "add-on"
 
 blender_version_min = "4.5.0"
 
-license = ["SPDX:MIT"]
+license = ["SPDX:GPL-3.0-or-later", "SPDX:MIT"]
 
 website = "https://github.com/steliosfil/All-Objects-into-Assets-Addon"
 # tags = ["Asset Management", "Outliner"]

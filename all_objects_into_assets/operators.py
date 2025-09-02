@@ -7,12 +7,19 @@ from .helpers.utils import (
     collection_path,
     normalize_catalog_path,
     resolve_library_path,
+    collections_scope_from_context,  # NEW: scope from Outliner selection
 )
 from .helpers.catalogs import read_cdf, write_cdf, ensure_catalog
 from .helpers.previews import refresh_previews
 
+
 class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
-    """Create per-parent collection assets, mark all objects as assets, mirror Collections into Catalogs."""
+    """Create per-parent collection assets, mark objects as assets, and mirror Collections into Catalogs.
+    
+    If one or more Collections are selected in the Outliner when invoked, this operator
+    limits processing to those Collections and their child Collections (scoped mode).
+    Otherwise it processes the entire file (global mode).
+    """
     bl_idname = "outliner.all_objects_into_assets"
     bl_label = "All Objects into Assets (Hierarchy)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -22,6 +29,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         return True
 
     def execute(self, context):
+        # Preferences
         prefs = bpy.context.preferences.addons[__package__].preferences
         master_name = prefs.master_collection_name.strip() or "Assets"
         library_name = prefs.asset_library
@@ -45,6 +53,9 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             except Exception:
                 pass
 
+        # Decide scope from Outliner selection (None => process everything)
+        scope_colls = collections_scope_from_context(context)  # set[Collection] or None
+
         # Build scene collection hierarchy map
         parent_map = build_parent_map_from_scene(context.scene)
 
@@ -55,10 +66,14 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         # Exclude master collection and generated *_asset collections from being mirrored
         excluded = {master_col.name}
 
-        # Pass 1: mirror all regular Collections into catalogs (hierarchy)
-        for coll in bpy.data.collections:
+        # -------------------------
+        # Pass 1: mirror Collections -> Catalogs (respect scope)
+        # -------------------------
+        iter_colls = (scope_colls if scope_colls is not None else bpy.data.collections)
+        for coll in iter_colls:
             if coll.name in excluded or coll.name.endswith(asset_suffix):
                 continue
+            # compute hierarchical path (if we know the parent chain)
             path_parts = collection_path(coll, parent_map) if coll in parent_map else [coll.name]
             cat_path = normalize_catalog_path(path_parts, catalog_root)
             uid = ensure_catalog(cdf_entries, cat_path, path_parts[-1] if path_parts else coll.name)
@@ -67,8 +82,17 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         obj_assets = []
         col_assets = []
 
-        # Pass 2: mark ALL OBJECTS as assets; assign to deepest catalog of their collections
-        for obj in bpy.data.objects:
+        # -------------------------
+        # Pass 2: mark OBJECTS -> Assets (respect scope)
+        # -------------------------
+        if scope_colls is None:
+            iter_objs = bpy.data.objects
+        else:
+            # Only objects linked to at least one collection in scope
+            iter_objs = [o for o in bpy.data.objects if any((c in scope_colls) for c in o.users_collection)]
+
+        for obj in iter_objs:
+            # Assign to deepest-matching catalog among the object's collections (inside mirrored set)
             candidates = []
             for col in obj.users_collection:
                 if col in coll_to_catalog:
@@ -90,10 +114,18 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                     pass
             obj_assets.append(obj)
 
-        # Pass 3: for each object with children, create/update <name><suffix> collection with all descendants; mark it as asset
-        for obj in bpy.data.objects:
-            if not obj.children:
-                continue
+        # -------------------------
+        # Pass 3: for each PARENT object, create/update <name><suffix> collection -> Asset (respect scope)
+        # -------------------------
+        if scope_colls is None:
+            parent_objs = [o for o in bpy.data.objects if o.children]
+        else:
+            parent_objs = [
+                o for o in bpy.data.objects
+                if o.children and any((c in scope_colls) for c in o.users_collection)
+            ]
+
+        for obj in parent_objs:
             col_name = f"{obj.name}{asset_suffix}"
             col = bpy.data.collections.get(col_name)
             if not col:
@@ -103,9 +135,8 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                 except Exception:
                     pass
 
+            # Link descendants into the asset collection (avoid re-linking via users_collection)
             members = gather_descendants(obj)
-
-            # Link members into the collection (avoid re-linking using users_collection)
             for m in members:
                 if isinstance(m, bpy.types.Object) and (col not in m.users_collection):
                     try:
@@ -120,7 +151,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                 except Exception:
                     pass
 
-            # Assign collection asset to the object's deepest catalog
+            # Assign collection asset to the deepest catalog of the parent object
             candidates = []
             for col_of_obj in obj.users_collection:
                 if col_of_obj in coll_to_catalog:
@@ -138,7 +169,9 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
 
             col_assets.append(col)
 
+        # -------------------------
         # Persist catalogs to disk
+        # -------------------------
         try:
             lib_path.mkdir(parents=True, exist_ok=True)
             write_cdf(cdf_path, cdf_entries)
@@ -150,13 +183,20 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             self.report({'ERROR'}, f"Catalog write failed: {e}")
             return {'CANCELLED'}
 
-        # Preview refresh
+        # -------------------------
+        # Preview refresh (optional)
+        # -------------------------
         ran = True
         if refresh_mode != 'NONE':
             ran = refresh_previews(list(obj_assets) + list(col_assets), refresh_mode)
 
-        msg = f"Assets: {len(obj_assets)} objects, {len(col_assets)} collections | Catalogs: {len(cdf_entries)}"
+        # -------------------------
+        # Report
+        # -------------------------
+        scope_msg = "Scoped to selected Collections" if scope_colls is not None else "Global (all Collections)"
+        msg = f"{scope_msg} | Assets: {len(obj_assets)} objects, {len(col_assets)} collections | Catalogs: {len(cdf_entries)}"
         if refresh_mode != 'NONE':
             msg += " | Previews refreshed" if ran else " | Preview refresh skipped"
         self.report({'INFO'}, msg)
+
         return {'FINISHED'}

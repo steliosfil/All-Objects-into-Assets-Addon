@@ -1,22 +1,28 @@
-name: Build & Release ZIP
+name: Build & Attach Addon ZIP
+
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]   # runs when you click "Publish release"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository at the release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Build addon ZIP
+      - name: Prepare dist folder
         run: |
           mkdir -p dist
-          zip -r dist/AllObjectsIntoAssets.zip all_objects_into_assets
+          # Zip ONLY the addon package folder so the ZIP root contains all_objects_into_assets/
+          zip -r dist/AllObjectsIntoAssets.zip all_objects_into_assets \
+            -x "**/__pycache__/*" "**/*.pyc" "**/.DS_Store"
 
-      - name: Create GitHub Release
+      - name: Attach ZIP to the current release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: dist/AllObjectsIntoAssets.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,15 @@
+schema_version = "1.0.0"
+
+id = "stellarc.all_objects_into_assets"
+version = "1.0.0"
+name = "All Objects into Assets"
+tagline = "Create collection assets and catalogs automatically"  # ≤64 chars, no period
+maintainer = "StellArc"
+type = "add-on"
+
+blender_version_min = "4.5.0"
+
+license = ["SPDX:MIT"]
+
+website = "https://github.com/steliosfil/All-Objects-into-Assets-Addon"
+# tags = ["Asset Management", "Outliner"]

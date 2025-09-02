@@ -2,10 +2,11 @@ name: Build & Attach Addon ZIP
 
 on:
   release:
-    types: [published]
+    types: [published, edited]   # run when you publish OR edit the release
+  workflow_dispatch:             # allow manual run from Actions tab
 
 permissions:
-  contents: write   # <-- allow attaching assets to releases
+  contents: write                # REQUIRED to attach assets to release
 
 jobs:
   build:

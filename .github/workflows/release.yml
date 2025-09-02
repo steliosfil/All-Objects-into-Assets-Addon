@@ -1,0 +1,22 @@
+name: Build & Release ZIP
+on:
+  push:
+    tags:
+      - "v*"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build addon ZIP
+        run: |
+          mkdir -p dist
+          zip -r dist/AllObjectsIntoAssets.zip all_objects_into_assets
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

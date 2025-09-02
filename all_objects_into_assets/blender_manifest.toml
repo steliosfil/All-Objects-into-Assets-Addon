@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 
-id = "stellarc.all_objects_into_assets"
+id = "all_objects_into_assets"
 version = "1.0.0"
 name = "All Objects into Assets"
 tagline = "Create collection assets and catalogs automatically"  # ≤64 chars, no period

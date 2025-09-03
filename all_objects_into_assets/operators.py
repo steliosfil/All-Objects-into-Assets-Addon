@@ -7,7 +7,7 @@ from .helpers.utils import (
     collection_path,
     normalize_catalog_path,
     resolve_library_path,
-    collections_scope_from_context,  # NEW: scope from Outliner selection
+    collections_scope_from_context,  # selection → set of Collections
 )
 from .helpers.catalogs import read_cdf, write_cdf, ensure_catalog
 from .helpers.previews import refresh_previews
@@ -15,18 +15,42 @@ from .helpers.previews import refresh_previews
 
 class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
     """Create per-parent collection assets, mark objects as assets, and mirror Collections into Catalogs.
-    
-    If one or more Collections are selected in the Outliner when invoked, this operator
-    limits processing to those Collections and their child Collections (scoped mode).
-    Otherwise it processes the entire file (global mode).
+
+    Scope control:
+      - force_scope='SELECTED' → only selected Outliner Collections (and their children).
+      - force_scope='ALL'      → whole file, ignores selection.
+      - force_scope='AUTO'     → selected if any, otherwise all (legacy behavior).
     """
     bl_idname = "outliner.all_objects_into_assets"
     bl_label = "All Objects into Assets (Hierarchy)"
     bl_options = {'REGISTER', 'UNDO'}
 
+    force_scope: bpy.props.EnumProperty(
+        name="Scope",
+        items=[
+            ("AUTO", "Auto", "Use selected Collections if any; otherwise process all"),
+            ("SELECTED", "Selected Collections", "Only the selected Collections (and their children)"),
+            ("ALL", "All Collections", "Process all Collections in the file"),
+        ],
+        default="AUTO",
+    )
+
     @classmethod
     def poll(cls, context):
         return True
+
+    def _compute_scope(self, context):
+        """Return a set of Collections or None (meaning 'all'). Handles force_scope."""
+        if self.force_scope == 'ALL':
+            return None
+        elif self.force_scope == 'SELECTED':
+            scoped = collections_scope_from_context(context)
+            if not scoped:
+                self.report({'WARNING'}, "No Collections selected in the Outliner.")
+                return "CANCEL"  # sentinel
+            return scoped
+        else:  # AUTO
+            return collections_scope_from_context(context)  # may be None (all) or set
 
     def execute(self, context):
         # Preferences
@@ -53,8 +77,10 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             except Exception:
                 pass
 
-        # Decide scope from Outliner selection (None => process everything)
-        scope_colls = collections_scope_from_context(context)  # set[Collection] or None
+        # Decide scope
+        scope_colls = self._compute_scope(context)
+        if scope_colls == "CANCEL":
+            return {'CANCELLED'}
 
         # Build scene collection hierarchy map
         parent_map = build_parent_map_from_scene(context.scene)
@@ -73,7 +99,6 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         for coll in iter_colls:
             if coll.name in excluded or coll.name.endswith(asset_suffix):
                 continue
-            # compute hierarchical path (if we know the parent chain)
             path_parts = collection_path(coll, parent_map) if coll in parent_map else [coll.name]
             cat_path = normalize_catalog_path(path_parts, catalog_root)
             uid = ensure_catalog(cdf_entries, cat_path, path_parts[-1] if path_parts else coll.name)
@@ -88,11 +113,9 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         if scope_colls is None:
             iter_objs = bpy.data.objects
         else:
-            # Only objects linked to at least one collection in scope
             iter_objs = [o for o in bpy.data.objects if any((c in scope_colls) for c in o.users_collection)]
 
         for obj in iter_objs:
-            # Assign to deepest-matching catalog among the object's collections (inside mirrored set)
             candidates = []
             for col in obj.users_collection:
                 if col in coll_to_catalog:
@@ -115,7 +138,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             obj_assets.append(obj)
 
         # -------------------------
-        # Pass 3: for each PARENT object, create/update <name><suffix> collection -> Asset (respect scope)
+        # Pass 3: per-parent collection assets (respect scope)
         # -------------------------
         if scope_colls is None:
             parent_objs = [o for o in bpy.data.objects if o.children]
@@ -193,7 +216,10 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         # -------------------------
         # Report
         # -------------------------
-        scope_msg = "Scoped to selected Collections" if scope_colls is not None else "Global (all Collections)"
+        if self.force_scope == 'ALL' or (self.force_scope == 'AUTO' and scope_colls is None):
+            scope_msg = "All Collections"
+        else:
+            scope_msg = "Selected Collections"
         msg = f"{scope_msg} | Assets: {len(obj_assets)} objects, {len(col_assets)} collections | Catalogs: {len(cdf_entries)}"
         if refresh_mode != 'NONE':
             msg += " | Previews refreshed" if ran else " | Preview refresh skipped"

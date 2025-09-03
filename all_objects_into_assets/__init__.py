@@ -15,13 +15,12 @@ import bpy
 
 if "bpy" in locals():
     import importlib
-    if "operators" in locals():
-        importlib.reload(operators)
-    if "ui" in locals():
-        importlib.reload(ui)
+    from . import operators, ui        
+    importlib.reload(operators)
+    importlib.reload(ui)
 else:
-    from . import operators, ui 
-
+    from . import operators, ui
+    
 __all__ = ("register", "unregister")
 
 # Classes to register from submodules

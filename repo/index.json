@@ -7,18 +7,19 @@
       "id": "all_objects_into_assets",
       "name": "All Objects into Assets",
       "tagline": "Create collection assets and catalogs automatically",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "type": "add-on",
       "maintainer": "StellArc",
       "license": [
-        "SPDX:GPL-3.0-or-later",
-        "SPDX:MIT"
+        "SPDX:GPL-3.0-or-later"
       ],
       "blender_version_min": "4.5.0",
-      "website": "https://github.com/steliosfil/All-Objects-into-Assets-Addon",
-      "archive_url": "./all_objects_into_assets-1.0.1.zip",
-      "archive_size": 7101,
-      "archive_hash": "sha256:889099219ea3a54d7be1d98a9d158a6db2bbe2520e57b06b493086fa734665e5"
+      "permissions": {
+        "files": "Read/write asset library catalogs file"
+      },
+      "archive_url": "./all_objects_into_assets-1.0.2.zip",
+      "archive_size": 7446,
+      "archive_hash": "sha256:354230bdb0bb16c83f18c4f876bb63477c7f9770e8b8df70078c9f0d99c3a556"
     }
   ]
 }

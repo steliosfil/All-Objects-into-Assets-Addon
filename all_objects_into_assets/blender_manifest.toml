@@ -6,14 +6,8 @@ name = "All Objects into Assets"
 tagline = "Create collection assets and catalogs automatically"
 maintainer = "StellArc"
 type = "add-on"
-
 blender_version_min = "4.5.0"
-
-license = ["SPDX:GPL-3.0-or-later", "SPDX:MIT"]
-
-website = "https://github.com/steliosfil/All-Objects-into-Assets-Addon"
+license = ["SPDX:GPL-3.0-or-later"]
 
 [permissions]
-# This add-on creates/updates Asset Browser catalog entries by reading/writing
-# the catalog definition file in the selected asset library directory.
-files = { read = true, write = true, reason = "Create/update Asset Browser catalog definition (blender_assets.cats.txt) in the target asset library." }
+files = "Read/write asset library catalogs file"

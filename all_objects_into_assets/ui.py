@@ -1,4 +1,6 @@
 import bpy
+from .helpers.utils import collections_scope_from_context  # for dynamic label
+
 
 # ---------- Preferences ----------
 
@@ -7,6 +9,7 @@ def _asset_lib_items(self, context):
     for lib in bpy.context.preferences.filepaths.asset_libraries:
         items.append((lib.name, lib.name, lib.path))
     return items
+
 
 class AddonPrefs(bpy.types.AddonPreferences):
     bl_idname = __package__
@@ -47,8 +50,8 @@ class AddonPrefs(bpy.types.AddonPreferences):
     )
     enable_outliner_header_button: bpy.props.BoolProperty(
         name="Show Button in Outliner Header",
-        default=True,
-        description="Show a button in the Outliner header that runs the operator",
+        default=False,  # Default OFF per review feedback
+        description="Optional: show a button in the Outliner header that runs the operator",
     )
 
     def draw(self, context):
@@ -64,43 +67,88 @@ class AddonPrefs(bpy.types.AddonPreferences):
         col.prop(self, "enable_context_menu")
         col.prop(self, "enable_outliner_header_button")
 
-# ---------- Menus & Header ----------
+
+# ---------- Context Menu helpers ----------
+
+def _draw_blocked_operator(layout, context):
+    """
+    Draw our operator in its own separated block at the bottom.
+    Label reflects whether the operator will process Selected Collections or All Collections.
+    """
+    prefs = bpy.context.preferences.addons[__package__].preferences
+    if not prefs.enable_context_menu:
+        return
+
+    scope = collections_scope_from_context(context)
+    label = "All Objects into Assets (Selected Collections)" if scope else "All Objects into Assets (All Collections)"
+
+    layout.separator()  # visual divider (the "thin white line" section break)
+    layout.operator("outliner.all_objects_into_assets", text=label, icon='ASSET_MANAGER')
+
 
 def outliner_object_menu(self, context):
-    prefs = bpy.context.preferences.addons[__package__].preferences
-    if prefs.enable_context_menu:
-        self.layout.operator("outliner.all_objects_into_assets", text="All Objects into Assets (Hierarchy)")
+    _draw_blocked_operator(self.layout, context)
+
 
 def outliner_collection_menu(self, context):
-    prefs = bpy.context.preferences.addons[__package__].preferences
-    if prefs.enable_context_menu:
-        self.layout.operator("outliner.all_objects_into_assets", text="All Objects into Assets (Hierarchy)")
+    _draw_blocked_operator(self.layout, context)
+
 
 def outliner_general_menu(self, context):
-    prefs = bpy.context.preferences.addons[__package__].preferences
-    if prefs.enable_context_menu:
-        self.layout.operator("outliner.all_objects_into_assets", text="All Objects into Assets (Hierarchy)")
+    _draw_blocked_operator(self.layout, context)
+
+
+# ---------- Outliner Header (opt-in) ----------
 
 def outliner_header_button(self, context):
     prefs = bpy.context.preferences.addons[__package__].preferences
     if not prefs.enable_outliner_header_button:
         return
+    # Button label can also reflect scope when clicked from Outliner area
+    scope = collections_scope_from_context(context)
+    txt = "Assets + Catalogs (Selected)" if scope else "Assets + Catalogs (All)"
     row = self.layout.row(align=True)
     row.separator()
     row.operator(
         "outliner.all_objects_into_assets",
-        text="Assets + Catalogs",
+        text=txt,
         icon='ASSET_MANAGER'
     )
+
+
+# ---------- Register / Unregister ----------
 
 def register_menus():
     bpy.types.OUTLINER_MT_object.append(outliner_object_menu)
     bpy.types.OUTLINER_MT_collection.append(outliner_collection_menu)
     bpy.types.OUTLINER_MT_context_menu.append(outliner_general_menu)
-    bpy.types.OUTLINER_HT_header.append(outliner_header_button)
+
+    # Only register the header button if user enabled it (opt-in)
+    try:
+        prefs = bpy.context.preferences.addons[__package__].preferences
+        if prefs.enable_outliner_header_button:
+            bpy.types.OUTLINER_HT_header.append(outliner_header_button)
+    except Exception:
+        # Preferences might not be initialized yet on first register; that's fine
+        pass
+
 
 def unregister_menus():
-    bpy.types.OUTLINER_HT_header.remove(outliner_header_button)
-    bpy.types.OUTLINER_MT_context_menu.remove(outliner_general_menu)
-    bpy.types.OUTLINER_MT_collection.remove(outliner_collection_menu)
-    bpy.types.OUTLINER_MT_object.remove(outliner_object_menu)
+    # Remove header button if present
+    try:
+        bpy.types.OUTLINER_HT_header.remove(outliner_header_button)
+    except Exception:
+        pass
+    # Remove context menu hooks
+    try:
+        bpy.types.OUTLINER_MT_context_menu.remove(outliner_general_menu)
+    except Exception:
+        pass
+    try:
+        bpy.types.OUTLINER_MT_collection.remove(outliner_collection_menu)
+    except Exception:
+        pass
+    try:
+        bpy.types.OUTLINER_MT_object.remove(outliner_object_menu)
+    except Exception:
+        pass

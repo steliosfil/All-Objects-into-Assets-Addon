@@ -1,32 +1,28 @@
 bl_info = {
     "name": "All Objects into Assets",
     "author": "StellArc",
-    "version": (1, 0, 1),
+    "version": (1, 0, 2),
     "blender": (4, 5, 0),
-    "location": "Outliner (right-click / header button)",
-    "description": "Marks all objects and generated per-parent collections as assets, mirrors Collections into Asset Catalogs (hierarchy preserved), and refreshes previews.",
+    "location": "Outliner → Right-click",
+    "description": "Marks objects and per-parent collections as assets; mirrors collections into catalogs; optional preview refresh.",
     "category": "Outliner",
+    "maintainer": "StellArc",
     "doc_url": "",
     "tracker_url": "",
-    "maintainer": "StellArc",
 }
 
-import importlib
 import bpy
 
-from . import operators, ui
-
-# Lazy-reload when running from Text Editor
-def _reload():
-    importlib.reload(operators)
-    importlib.reload(ui)
-
-try:
-    _reloading
-except NameError:
-    _reloading = False
+if "bpy" in locals():
+    import importlib
+    if "operators" in locals():
+        importlib.reload(operators)
+    if "ui" in locals():
+        importlib.reload(ui)
 else:
-    _reload()
+    from . import operators, ui
+
+__all__ = ("register", "unregister")
 
 classes = (
     operators.OUTLINER_OT_all_objects_into_assets,
@@ -34,11 +30,11 @@ classes = (
 )
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    for cls in classes:
+        bpy.utils.register_class(cls)
     ui.register_menus()
 
 def unregister():
     ui.unregister_menus()
-    for c in reversed(classes):
-        bpy.utils.unregister_class(c)
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)

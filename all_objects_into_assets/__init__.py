@@ -1,7 +1,7 @@
 bl_info = {
     "name": "All Objects into Assets",
     "author": "StellArc",
-    "version": (1, 0, 1, 2),
+    "version": (1, 0, 2),
     "blender": (4, 5, 0),
     "location": "Outliner → Right-click",
     "description": "Marks objects and per-parent collections as assets; mirrors collections into catalogs; optional preview refresh.",

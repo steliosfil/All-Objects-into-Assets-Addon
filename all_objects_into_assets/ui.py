@@ -1,5 +1,51 @@
 import bpy
 
+# ---------- PropertyGroup & UIList for excluded roots ----------
+
+class AOIA_ExcludedRoot(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(
+        name="Collection Name",
+        description="Root Collection to exclude (the whole subtree will be ignored)"
+    )
+
+class AOIA_UL_excluded_roots(bpy.types.UIList):
+    """UI list that shows excluded root collection names"""
+    bl_idname = "AOIA_UL_excluded_roots"
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        # item is AOIA_ExcludedRoot
+        if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+            row.prop(item, "name", text="", emboss=True, icon='OUTLINER_COLLECTION')
+        elif self.layout_type in {'GRID'}:
+            layout.alignment = 'CENTER'
+            layout.label(text=item.name)
+
+class AOIA_OT_excluded_add(bpy.types.Operator):
+    bl_idname = "aoia.excluded_add"
+    bl_label = "Add"
+    bl_description = "Add a root Collection name to exclude"
+
+    def execute(self, context):
+        prefs = bpy.context.preferences.addons[__package__].preferences
+        new = prefs.excluded_roots.add()
+        new.name = ""
+        prefs.excluded_roots_index = len(prefs.excluded_roots) - 1
+        return {'FINISHED'}
+
+class AOIA_OT_excluded_remove(bpy.types.Operator):
+    bl_idname = "aoia.excluded_remove"
+    bl_label = "Remove"
+    bl_description = "Remove the selected excluded root"
+
+    def execute(self, context):
+        prefs = bpy.context.preferences.addons[__package__].preferences
+        idx = prefs.excluded_roots_index
+        if 0 <= idx < len(prefs.excluded_roots):
+            prefs.excluded_roots.remove(idx)
+            prefs.excluded_roots_index = min(idx, len(prefs.excluded_roots) - 1)
+        return {'FINISHED'}
+
 
 # ---------- Preferences ----------
 
@@ -24,7 +70,7 @@ class AddonPrefs(bpy.types.AddonPreferences):
     catalog_root: bpy.props.StringProperty(
         name="Catalog Root Prefix",
         default="",
-        description="Optional prefix folder for all catalog paths, e.g. 'Pack01' -> Pack01/Buildings/Doors",
+        description="Optional prefix folder for all catalog paths, e.g. 'Pack01' → Pack01/Buildings/Doors",
     )
     asset_suffix: bpy.props.StringProperty(
         name="Asset Collection Suffix",
@@ -41,15 +87,10 @@ class AddonPrefs(bpy.types.AddonPreferences):
         ],
         default="NONE",
     )
-    excluded_root_collections: bpy.props.StringProperty(
-        name="Also Exclude These Roots",
-        description=(
-            "Optional list of extra root Collections to exclude from catalog mirroring.\n"
-            "Separate names with commas or new lines. Each name excludes that collection and all its children"
-        ),
-        default="",
-        options={'MULTILINE'},
-    )
+
+    # New: multi-line list of extra excluded root collections
+    excluded_roots: bpy.props.CollectionProperty(type=AOIA_ExcludedRoot)
+    excluded_roots_index: bpy.props.IntProperty(default=0)
 
     def draw(self, context):
         col = self.layout.column()
@@ -59,10 +100,25 @@ class AddonPrefs(bpy.types.AddonPreferences):
         col.prop(self, "catalog_root")
         col.prop(self, "asset_suffix")
         col.prop(self, "preview_refresh_mode")
-        col.prop(self, "excluded_root_collections")
+
+        col.separator()
+        col.label(text="Also Exclude These Roots", icon="OUTLINER_COLLECTION")
+        row = col.row()
+        row.template_list(
+            listtype_name="AOIA_UL_excluded_roots",
+            list_id="",
+            dataptr=self,
+            propname="excluded_roots",
+            active_dataptr=self,
+            active_propname="excluded_roots_index",
+            rows=4,
+        )
+        buttons = row.column(align=True)
+        buttons.operator("aoia.excluded_add", icon='ADD', text="")
+        buttons.operator("aoia.excluded_remove", icon='REMOVE', text="")
 
 
-# ---------- Outliner Context Menus (always shown) ----------
+# ---------- Outliner context menus (always present) ----------
 
 def _draw_block(layout):
     layout.separator()
@@ -93,13 +149,30 @@ def outliner_general_menu(self, context):
     _draw_block(self.layout)
 
 
+# We register UI-related classes here so __init__.py can keep its simple class list.
+_EXTRA_UI_CLASSES = (
+    AOIA_ExcludedRoot,
+    AOIA_UL_excluded_roots,
+    AOIA_OT_excluded_add,
+    AOIA_OT_excluded_remove,
+)
+
 def register_menus():
+    # Ensure our UI helper classes are registered (safe on reloads)
+    for cls in _EXTRA_UI_CLASSES:
+        try:
+            bpy.utils.register_class(cls)
+        except RuntimeError:
+            # already registered
+            pass
+
     bpy.types.OUTLINER_MT_object.append(outliner_object_menu)
     bpy.types.OUTLINER_MT_collection.append(outliner_collection_menu)
     bpy.types.OUTLINER_MT_context_menu.append(outliner_general_menu)
 
 
 def unregister_menus():
+    # Remove menus
     try:
         bpy.types.OUTLINER_MT_context_menu.remove(outliner_general_menu)
     except Exception:
@@ -112,3 +185,10 @@ def unregister_menus():
         bpy.types.OUTLINER_MT_object.remove(outliner_object_menu)
     except Exception:
         pass
+
+    # Unregister UI helper classes (reverse order)
+    for cls in reversed(_EXTRA_UI_CLASSES):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass

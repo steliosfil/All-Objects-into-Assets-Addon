@@ -8,18 +8,10 @@ from .helpers.utils import (
     normalize_catalog_path,
     resolve_library_path,
     collections_scope_from_context,
-    walk_child_collections,  # for exclusion set
+    walk_child_collections,  # for exclusions
 )
 from .helpers.catalogs import read_cdf, write_cdf, ensure_catalog
 from .helpers.previews import refresh_previews
-
-
-def _parse_excluded_names(raw: str):
-    """Return a list of non-empty collection names from a comma/newline-separated string."""
-    if not raw:
-        return []
-    parts = [p.strip() for chunk in raw.split("\n") for p in chunk.split(",")]
-    return [p for p in parts if p]
 
 
 class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
@@ -70,7 +62,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             return {'CANCELLED'}
         cdf_path = Path(lib_path) / "blender_assets.cats.txt"
 
-        # Ensure master collection exists
+        # Ensure master collection exists (container for *_asset collections)
         master_col = bpy.data.collections.get(master_name)
         if not master_col:
             master_col = bpy.data.collections.new(master_name)
@@ -79,16 +71,21 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             except Exception:
                 pass
 
-        # Build exclusion set: master subtree + any user-provided extra roots
-        excluded_cols = set(walk_child_collections(master_col))
-        extra_names = _parse_excluded_names(getattr(prefs, "excluded_root_collections", ""))
-        for nm in extra_names:
+        # ---------- Build exclusion set by identity ----------
+        excluded_cols = set(walk_child_collections(master_col))  # always exclude master subtree
+
+        # Read names from multi-line list in preferences
+        for item in getattr(prefs, "excluded_roots", []):
+            nm = (item.name or "").strip()
+            if not nm:
+                continue
             col = bpy.data.collections.get(nm)
             if col:
                 for c in walk_child_collections(col):
                     excluded_cols.add(c)
+        # ----------------------------------------------------
 
-        # Decide scope
+        # Decide scope (None => all)
         scope_colls = self._compute_scope(context)
         if scope_colls == "CANCEL":
             return {'CANCELLED'}
@@ -96,7 +93,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         # Build scene collection hierarchy map
         parent_map = build_parent_map_from_scene(context.scene)
 
-        # Load existing catalogs
+        # Load existing catalogs, and build mapping for collections we mirror
         cdf_entries = read_cdf(cdf_path)
         coll_to_catalog = {}
 
@@ -105,7 +102,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         # -------------------------
         iter_colls = (scope_colls if scope_colls is not None else bpy.data.collections)
         for coll in iter_colls:
-            # skip excluded (master + user-defined roots) and *_asset buckets
+            # Skip excluded (master + user-defined roots) and *_asset buckets
             if (coll in excluded_cols) or coll.name.endswith(asset_suffix):
                 continue
             path_parts = collection_path(coll, parent_map) if coll in parent_map else [coll.name]
@@ -124,17 +121,20 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             iter_objs = [o for o in bpy.data.objects if any((c in scope_colls) for c in o.users_collection)]
 
         for obj in iter_objs:
+            # Choose deepest catalog among the object's collections that we mirrored
             candidates = []
             for col in obj.users_collection:
                 if col in coll_to_catalog:
                     uid, simple, cat_path = coll_to_catalog[col]
                     depth = cat_path.count("/") + 1
                     candidates.append((depth, uid, simple))
+            # Mark object as asset
             try:
                 if not obj.asset_data:
                     obj.asset_mark()
             except Exception:
                 pass
+            # Assign catalog
             if candidates and obj.asset_data:
                 candidates.sort(key=lambda t: t[0], reverse=True)
                 _, uid, simple = candidates[0]
@@ -146,7 +146,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             obj_assets.append(obj)
 
         # -------------------------
-        # Pass 3: per-parent collection assets (respect scope)
+        # Pass 3: parent objects -> <name>_asset collection assets (respect scope)
         # -------------------------
         if scope_colls is None:
             parent_objs = [o for o in bpy.data.objects if o.children]
@@ -166,7 +166,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                 except Exception:
                     pass
 
-            # Link descendants into the asset collection
+            # Link descendants into this asset collection (without duplicating links)
             members = gather_descendants(obj)
             for m in members:
                 if isinstance(m, bpy.types.Object) and (col not in m.users_collection):
@@ -182,7 +182,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                 except Exception:
                     pass
 
-            # Assign collection asset to the deepest catalog of the parent object
+            # Assign collection asset to deepest catalog of the parent object
             candidates = []
             for col_of_obj in obj.users_collection:
                 if col_of_obj in coll_to_catalog:
@@ -228,10 +228,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             scope_msg = "All Collections"
         else:
             scope_msg = "Selected Collections"
-        msg = (
-            f"{scope_msg} | Assets: {len(obj_assets)} objects, {len(col_assets)} collections "
-            f"| Catalogs: {len(cdf_entries)}"
-        )
+        msg = f"{scope_msg} | Assets: {len(obj_assets)} objects, {len(col_assets)} collections | Catalogs: {len(cdf_entries)}"
         if refresh_mode != 'NONE':
             msg += " | Previews refreshed" if ran else " | Preview refresh skipped"
         self.report({'INFO'}, msg)

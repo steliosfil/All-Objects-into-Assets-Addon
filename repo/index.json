@@ -18,8 +18,8 @@
         "files": "Read/write asset library catalogs file"
       },
       "archive_url": "./all_objects_into_assets-1.0.3.zip",
-      "archive_size": 8311,
-      "archive_hash": "sha256:7e1f869e82bc4310885b7e7acd0a9419e00b658ba28216dcd1e1c576251143bd"
+      "archive_size": 8166,
+      "archive_hash": "sha256:1fd481c1c2d8de59faeaf5b368694062c79dacf7305c03938acc1a6a8f430c37"
     }
   ]
 }

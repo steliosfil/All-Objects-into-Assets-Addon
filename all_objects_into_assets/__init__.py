@@ -13,26 +13,26 @@ bl_info = {
 
 import bpy
 
+# Robust hot-reload pattern
 if "bpy" in locals():
     import importlib
-    from . import operators, ui        
+    from . import operators, ui
     importlib.reload(operators)
     importlib.reload(ui)
 else:
     from . import operators, ui
-    
+
 __all__ = ("register", "unregister")
 
-# Classes to register from submodules
+# Register UI helper classes first (PropertyGroup/UIList/ops), then prefs, then operator
 classes = (
+    *ui.REGISTER_CLASSES,
     operators.OUTLINER_OT_all_objects_into_assets,
-    ui.AddonPrefs,
 )
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    # Menus are appended separately
     ui.register_menus()
 
 def unregister():

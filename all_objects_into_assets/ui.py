@@ -9,11 +9,9 @@ class AOIA_ExcludedRoot(bpy.types.PropertyGroup):
     )
 
 class AOIA_UL_excluded_roots(bpy.types.UIList):
-    """UI list that shows excluded root collection names"""
-    bl_idname = "AOIA_UL_excluded_roots"
+    bl_idname = "AOIA_UL_exCLUDED_ROOTS"
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        # item is AOIA_ExcludedRoot
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             row = layout.row(align=True)
             row.prop(item, "name", text="", emboss=True, icon='OUTLINER_COLLECTION')
@@ -88,7 +86,7 @@ class AddonPrefs(bpy.types.AddonPreferences):
         default="NONE",
     )
 
-    # New: multi-line list of extra excluded root collections
+    # Multi-line style list via CollectionProperty + UIList
     excluded_roots: bpy.props.CollectionProperty(type=AOIA_ExcludedRoot)
     excluded_roots_index: bpy.props.IntProperty(default=0)
 
@@ -105,7 +103,7 @@ class AddonPrefs(bpy.types.AddonPreferences):
         col.label(text="Also Exclude These Roots", icon="OUTLINER_COLLECTION")
         row = col.row()
         row.template_list(
-            listtype_name="AOIA_UL_excluded_roots",
+            listtype_name="AOIA_UL_exCLUDED_ROOTS",
             list_id="",
             dataptr=self,
             propname="excluded_roots",
@@ -140,39 +138,19 @@ def _draw_block(layout):
 def outliner_object_menu(self, context):
     _draw_block(self.layout)
 
-
 def outliner_collection_menu(self, context):
     _draw_block(self.layout)
-
 
 def outliner_general_menu(self, context):
     _draw_block(self.layout)
 
 
-# We register UI-related classes here so __init__.py can keep its simple class list.
-_EXTRA_UI_CLASSES = (
-    AOIA_ExcludedRoot,
-    AOIA_UL_excluded_roots,
-    AOIA_OT_excluded_add,
-    AOIA_OT_excluded_remove,
-)
-
 def register_menus():
-    # Ensure our UI helper classes are registered (safe on reloads)
-    for cls in _EXTRA_UI_CLASSES:
-        try:
-            bpy.utils.register_class(cls)
-        except RuntimeError:
-            # already registered
-            pass
-
     bpy.types.OUTLINER_MT_object.append(outliner_object_menu)
     bpy.types.OUTLINER_MT_collection.append(outliner_collection_menu)
     bpy.types.OUTLINER_MT_context_menu.append(outliner_general_menu)
 
-
 def unregister_menus():
-    # Remove menus
     try:
         bpy.types.OUTLINER_MT_context_menu.remove(outliner_general_menu)
     except Exception:
@@ -186,9 +164,12 @@ def unregister_menus():
     except Exception:
         pass
 
-    # Unregister UI helper classes (reverse order)
-    for cls in reversed(_EXTRA_UI_CLASSES):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+
+# Expose the correct registration order for __init__.py
+REGISTER_CLASSES = (
+    AOIA_ExcludedRoot,
+    AOIA_UL_excluded_roots,
+    AOIA_OT_excluded_add,
+    AOIA_OT_excluded_remove,
+    AddonPrefs,
+)

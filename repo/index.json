@@ -7,7 +7,7 @@
       "id": "all_objects_into_assets",
       "name": "All Objects into Assets",
       "tagline": "Create collection assets and catalogs automatically",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "type": "add-on",
       "maintainer": "StellArc",
       "license": [
@@ -17,9 +17,9 @@
       "permissions": {
         "files": "Read/write asset library catalogs file"
       },
-      "archive_url": "./all_objects_into_assets-1.0.2.zip",
-      "archive_size": 7711,
-      "archive_hash": "sha256:36b54d9b88ded941f709bdd55fb9ec617bacada558e2349feaa663d6a1d10a27"
+      "archive_url": "./all_objects_into_assets-1.0.3.zip",
+      "archive_size": 7492,
+      "archive_hash": "sha256:08161d9af97bfbff269f67f5441e44a99e81f6f7424d8df05399022b27b82e8e"
     }
   ]
 }

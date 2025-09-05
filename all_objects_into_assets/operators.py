@@ -7,20 +7,23 @@ from .helpers.utils import (
     collection_path,
     normalize_catalog_path,
     resolve_library_path,
-    collections_scope_from_context,  # selection → set of Collections
+    collections_scope_from_context,
+    walk_child_collections,  # for exclusion set
 )
 from .helpers.catalogs import read_cdf, write_cdf, ensure_catalog
 from .helpers.previews import refresh_previews
 
 
-class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
-    """Create per-parent collection assets, mark objects as assets, and mirror Collections into Catalogs.
+def _parse_excluded_names(raw: str):
+    """Return a list of non-empty collection names from a comma/newline-separated string."""
+    if not raw:
+        return []
+    parts = [p.strip() for chunk in raw.split("\n") for p in chunk.split(",")]
+    return [p for p in parts if p]
 
-    Scope control:
-      - force_scope='SELECTED' → only selected Outliner Collections (and their children).
-      - force_scope='ALL'      → whole file, ignores selection.
-      - force_scope='AUTO'     → selected if any, otherwise all (legacy behavior).
-    """
+
+class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
+    """Create per-parent collection assets, mark objects as assets, and mirror Collections into Catalogs."""
     bl_idname = "outliner.all_objects_into_assets"
     bl_label = "All Objects into Assets (Hierarchy)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -40,17 +43,16 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         return True
 
     def _compute_scope(self, context):
-        """Return a set of Collections or None (meaning 'all'). Handles force_scope."""
         if self.force_scope == 'ALL':
             return None
         elif self.force_scope == 'SELECTED':
             scoped = collections_scope_from_context(context)
             if not scoped:
                 self.report({'WARNING'}, "No Collections selected in the Outliner.")
-                return "CANCEL"  # sentinel
+                return "CANCEL"
             return scoped
-        else:  # AUTO
-            return collections_scope_from_context(context)  # may be None (all) or set
+        else:
+            return collections_scope_from_context(context)
 
     def execute(self, context):
         # Preferences
@@ -59,7 +61,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         library_name = prefs.asset_library
         catalog_root = prefs.catalog_root.strip()
         asset_suffix = prefs.asset_suffix
-        refresh_mode = prefs.preview_refresh_mode  # 'NONE'|'MISSING'|'ALL'
+        refresh_mode = prefs.preview_refresh_mode
 
         # Resolve asset library + CDF path
         lib_path = resolve_library_path(library_name)
@@ -77,6 +79,15 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             except Exception:
                 pass
 
+        # Build exclusion set: master subtree + any user-provided extra roots
+        excluded_cols = set(walk_child_collections(master_col))
+        extra_names = _parse_excluded_names(getattr(prefs, "excluded_root_collections", ""))
+        for nm in extra_names:
+            col = bpy.data.collections.get(nm)
+            if col:
+                for c in walk_child_collections(col):
+                    excluded_cols.add(c)
+
         # Decide scope
         scope_colls = self._compute_scope(context)
         if scope_colls == "CANCEL":
@@ -89,23 +100,20 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         cdf_entries = read_cdf(cdf_path)
         coll_to_catalog = {}
 
-        # Exclude master collection and generated *_asset collections from being mirrored
-        excluded = {master_col.name}
-
         # -------------------------
         # Pass 1: mirror Collections -> Catalogs (respect scope)
         # -------------------------
         iter_colls = (scope_colls if scope_colls is not None else bpy.data.collections)
         for coll in iter_colls:
-            if coll.name in excluded or coll.name.endswith(asset_suffix):
+            # skip excluded (master + user-defined roots) and *_asset buckets
+            if (coll in excluded_cols) or coll.name.endswith(asset_suffix):
                 continue
             path_parts = collection_path(coll, parent_map) if coll in parent_map else [coll.name]
             cat_path = normalize_catalog_path(path_parts, catalog_root)
             uid = ensure_catalog(cdf_entries, cat_path, path_parts[-1] if path_parts else coll.name)
             coll_to_catalog[coll] = (uid, path_parts[-1], cat_path)
 
-        obj_assets = []
-        col_assets = []
+        obj_assets, col_assets = [], []
 
         # -------------------------
         # Pass 2: mark OBJECTS -> Assets (respect scope)
@@ -158,7 +166,7 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                 except Exception:
                     pass
 
-            # Link descendants into the asset collection (avoid re-linking via users_collection)
+            # Link descendants into the asset collection
             members = gather_descendants(obj)
             for m in members:
                 if isinstance(m, bpy.types.Object) and (col not in m.users_collection):
@@ -220,7 +228,10 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
             scope_msg = "All Collections"
         else:
             scope_msg = "Selected Collections"
-        msg = f"{scope_msg} | Assets: {len(obj_assets)} objects, {len(col_assets)} collections | Catalogs: {len(cdf_entries)}"
+        msg = (
+            f"{scope_msg} | Assets: {len(obj_assets)} objects, {len(col_assets)} collections "
+            f"| Catalogs: {len(cdf_entries)}"
+        )
         if refresh_mode != 'NONE':
             msg += " | Previews refreshed" if ran else " | Preview refresh skipped"
         self.report({'INFO'}, msg)

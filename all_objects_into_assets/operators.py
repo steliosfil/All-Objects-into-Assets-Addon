@@ -1,5 +1,6 @@
 import bpy
 from pathlib import Path
+from fnmatch import fnmatchcase
 
 from .helpers.utils import (
     gather_descendants,
@@ -12,6 +13,32 @@ from .helpers.utils import (
 )
 from .helpers.catalogs import read_cdf, write_cdf, ensure_catalog
 from .helpers.previews import refresh_previews
+
+
+def _resolve_collections_by_name(pattern: str):
+    """
+    Resolve collections by name pattern:
+      - Exact case-insensitive match (most common)
+      - If the pattern contains '*' or '?', use glob-style matching (case-insensitive)
+    Returns a list (can be multiple when names are duplicated).
+    """
+    pat = (pattern or "").strip()
+    if not pat:
+        return []
+    wildcard = ("*" in pat) or ("?" in pat)
+    if wildcard:
+        pat_l = pat.casefold()
+        return [c for c in bpy.data.collections if fnmatchcase(c.name.casefold(), pat_l)]
+    else:
+        nm_l = pat.casefold()
+        return [c for c in bpy.data.collections if c.name.casefold() == nm_l]
+
+
+def _object_in_excluded(obj, excluded_cols: set) -> bool:
+    try:
+        return any((c in excluded_cols) for c in obj.users_collection)
+    except Exception:
+        return False
 
 
 class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
@@ -73,14 +100,12 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
 
         # ---------- Build exclusion set by identity ----------
         excluded_cols = set(walk_child_collections(master_col))  # always exclude master subtree
-
-        # Read names from multi-line list in preferences
+        # Read names from multi-line list in preferences (case-insensitive, supports wildcards)
         for item in getattr(prefs, "excluded_roots", []):
-            nm = (item.name or "").strip()
-            if not nm:
+            pat = (item.name or "").strip()
+            if not pat:
                 continue
-            col = bpy.data.collections.get(nm)
-            if col:
+            for col in _resolve_collections_by_name(pat):
                 for c in walk_child_collections(col):
                     excluded_cols.add(c)
         # ----------------------------------------------------
@@ -113,12 +138,14 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
         obj_assets, col_assets = [], []
 
         # -------------------------
-        # Pass 2: mark OBJECTS -> Assets (respect scope)
+        # Pass 2: mark OBJECTS -> Assets (respect scope + exclusions)
         # -------------------------
         if scope_colls is None:
-            iter_objs = bpy.data.objects
+            base_objs = list(bpy.data.objects)
         else:
-            iter_objs = [o for o in bpy.data.objects if any((c in scope_colls) for c in o.users_collection)]
+            base_objs = [o for o in bpy.data.objects if any((c in scope_colls) for c in o.users_collection)]
+        # Exclude any object that belongs to excluded collections
+        iter_objs = [o for o in base_objs if not _object_in_excluded(o, excluded_cols)]
 
         for obj in iter_objs:
             # Choose deepest catalog among the object's collections that we mirrored
@@ -128,12 +155,14 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                     uid, simple, cat_path = coll_to_catalog[col]
                     depth = cat_path.count("/") + 1
                     candidates.append((depth, uid, simple))
-            # Mark object as asset
+
+            # Mark object as asset (only for non-excluded)
             try:
                 if not obj.asset_data:
                     obj.asset_mark()
             except Exception:
                 pass
+
             # Assign catalog
             if candidates and obj.asset_data:
                 candidates.sort(key=lambda t: t[0], reverse=True)
@@ -143,18 +172,20 @@ class OUTLINER_OT_all_objects_into_assets(bpy.types.Operator):
                     obj.asset_data.catalog_simple_name = simple
                 except Exception:
                     pass
+
             obj_assets.append(obj)
 
         # -------------------------
-        # Pass 3: parent objects -> <name>_asset collection assets (respect scope)
+        # Pass 3: parent objects -> <name>_asset collection assets (respect scope + exclusions)
         # -------------------------
         if scope_colls is None:
-            parent_objs = [o for o in bpy.data.objects if o.children]
+            base_parents = [o for o in bpy.data.objects if o.children]
         else:
-            parent_objs = [
+            base_parents = [
                 o for o in bpy.data.objects
                 if o.children and any((c in scope_colls) for c in o.users_collection)
             ]
+        parent_objs = [o for o in base_parents if not _object_in_excluded(o, excluded_cols)]
 
         for obj in parent_objs:
             col_name = f"{obj.name}{asset_suffix}"

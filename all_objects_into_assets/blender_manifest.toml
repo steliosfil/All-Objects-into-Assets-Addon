@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "all_objects_into_assets"
-version = "1.0.3"
+version = "1.0.4"
 name = "All Objects into Assets"
 tagline = "Create collection assets and catalogs automatically"
 maintainer = "StellArc"
